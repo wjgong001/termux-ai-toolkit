@@ -1,0 +1,80 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Termux AI Toolkit — 一键初始化 AI 环境
+# 用法：source bin/termux-ai-init
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${BLUE}══════════════════════════════════${NC}"
+echo -e "${BLUE}  Termux AI Toolkit — Init${NC}"
+echo -e "${BLUE}══════════════════════════════════${NC}"
+
+# 1. 检查环境
+echo -e "\n${GREEN}[1/5]${NC} 检查环境..."
+
+if [ ! -d "$PREFIX" ]; then
+    echo "❌ 这不是 Termux 环境"
+    exit 1
+fi
+
+TERMUX_AI_BIN="$PREFIX/bin"
+echo "    Termux prefix: $PREFIX"
+echo "    Toolkit dir: $SCRIPT_DIR"
+
+# 2. 装基础包
+echo -e "\n${GREEN}[2/5]${NC} 安装基础包..."
+pkg update -y -q 2>/dev/null || true
+pkg install -y -q python git openssl curl openssh wget 2>/dev/null || {
+    echo "⚠️  部分包可能已安装，继续..."
+}
+
+# 3. 配置 Git
+echo -e "\n${GREEN}[3/5]${NC} 配置 GitHub..."
+if [ -z "$GITHUB_TOKEN" ] && [ -f ~/.hermes/token_github ]; then
+    GITHUB_TOKEN=$(cat ~/.hermes/token_github 2>/dev/null)
+fi
+
+if [ -n "$GITHUB_TOKEN" ]; then
+    git config --global credential.helper store
+    echo "https://oauth2:$GITHUB_TOKEN@github.com" > ~/.git-credentials 2>/dev/null
+    chmod 600 ~/.git-credentials
+    echo -e "    ${GREEN}✓${NC} GitHub token 已配置"
+else
+    echo -e "    ${YELLOW}⚠  GITHUB_TOKEN 未设置${NC}"
+    echo "    export GITHUB_TOKEN=你的token 后再运行"
+fi
+
+# 4. 安装 AI 工具
+echo -e "\n${GREEN}[4/5]${NC} 设置 AI 环境..."
+if [ -d ~/hermes-agent ]; then
+    echo "    Hermes Agent 已安装"
+else
+    echo "    跳过（hermes-agent 未安装）"
+    echo "    可手动：git clone https://github.com/seanoliver00/hermes-agent.git"
+fi
+
+# 5. 设置别名
+echo -e "\n${GREEN}[5/5]${NC} 添加 AI 别名..."
+echo -e "\n# Termux AI Toolkit aliases" > /dev/null 2>&1
+if ! grep -q "termux-ai-toolkit" ~/.bashrc 2>/dev/null; then
+    cat >> ~/.bashrc << 'EOF'
+
+# Termux AI Toolkit aliases
+export PATH="$HOME/termux-ai-toolkit/bin:$PATH"
+alias ai-init="source bin/termux-ai-init"
+EOF
+    echo "    别名已添加"
+fi
+
+echo -e "\n${BLUE}══════════════════════════════════${NC}"
+echo -e "${GREEN}✅ 初始化完成！${NC}"
+echo -e "\n下一步："
+echo "  · 重新打开 Termux（别名生效）"
+echo "  · 或者 source ~/.bashrc"
+echo "  · 然后读 docs/01-bootstrap.md"
+echo -e "${BLUE}══════════════════════════════════${NC}"
