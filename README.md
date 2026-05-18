@@ -53,6 +53,7 @@ tools/      — 独立模块（可单独复用）
 | `configs/bash-ai-aliases.sh` | AI 友好的 bash 别名 | ✅ 可用 |
 | `docs/01-bootstrap.md` | 从零到第一个 AI 对话 | ✅ 可用 |
 | `docs/02-voice-to-text.md` | 手机上跑 whisper 语音转写 | ✅ 已验证 |
+| `docs/03-video-production.md` | Edge TTS + ffmpeg 做竖屏短视频 | ✅ 可用 |
 | `docs/04-github-workflow.md` | AI 的 GitHub 提交流程 | ✅ 可用 |
 
 ## 运行要求
