@@ -150,16 +150,51 @@ pkg upgrade ca-certificates
 # requests.get(url, verify=False, timeout=15)
 ```
 
+## 进阶：绕过 Cloudflare 反爬
+
+如果你遇到 Cloudflare 保护的页面（返回状态码 403/503、"Checking your browser" 提示），普通的 requests 过不去。但手机 Termux 现在能跑 `curl_cffi`——它有预编译的 Android aarch64 wheel，能模拟 Chrome 指纹，穿透大多数 Cloudflare 防护。
+
+### 安装
+
+```bash
+pip install curl_cffi
+# 自动安装 cffi 和预编译 wheel，手机上约 40 秒完成
+```
+
+### 使用
+
+```python
+from curl_cffi import requests
+
+# 关键参数：impersonate 指定要模拟的浏览器
+r = requests.get('https://nowsecure.nl', impersonate='chrome120', timeout=30)
+print(r.status_code)  # 200，而非 403
+```
+
+支持的 impersonate 目标包括 `chrome110`、`chrome120`、`chrome123`、`safari15_3` 等。
+
+### 与 lxml 搭配
+
+```python
+from curl_cffi import requests
+from lxml import html
+
+r = requests.get('https://被CF保护的站.com', impersonate='chrome120', timeout=30)
+tree = html.fromstring(r.text)
+data = tree.cssselect('.target-class')[0].text_content()
+```
+
+### 注意事项
+
+- `curl_cffi` 的请求比普通 `requests` 慢 1-2 秒（因为指纹协商）
+- 不要高频请求——CF 有行为分析，短时间大量请求仍然会触发验证
+- `impersonate` 参数不是万能药。极端场景（CF 5秒盾 + JS challenge）仍然过不了
+
 ## 进阶：关于 Scrapling
 
-[Scrapling](https://github.com/D4Vinci/Scrapling) 是一个更强大的 Python 抓取库，提供：
-- 智能元素匹配（自动找"标题""正文"等常见元素）
-- 内置 curl_cffi 引擎（指纹模拟、反 bot 检测）
-- 动态页面支持（Camoufox/Playwright）
+[Scrapling](https://github.com/D4Vinci/Scrapling) 是一个更强大的 Python 抓取库，封装了 curl_cffi 并提供了智能元素匹配。在 Termux 上，Scrapling 的 Fetcher 因为 orjson 编译问题不可用，但 **Scrapling 底层的 curl_cffi 我们已经能在 Termux 上跑了**，Cloudflare 穿透能力是一样的。
 
-**但在 Termux 上，它依赖的 orjson 需要编译（手机上编译会超时），curl_cffi 和 Camoufox 需要 cffi 和浏览器引擎。** 所以 Scrapling 更适合桌面/云服务器环境使用。
-
-如果你在云服务器或 WSL 上跑采集任务，推荐直接用 Scrapling：
+如果你在云服务器或 WSL 上跑采集任务，推荐直接用 Scrapling 本体：
 
 ```bash
 pip install scrapling
@@ -169,8 +204,7 @@ pip install scrapling
 from scrapling import Fetcher
 f = Fetcher()
 page = f.get('https://example.com')
-# 自动处理反爬、智能元素匹配
 title = page.css('h1').text
 ```
 
-在 Termux 上，requests + lxml 覆盖 90% 的场景。剩下的 10%（动态 JS 渲染、高级反爬绕过），等手机的算力和库生态成熟了再说。
+在 Termux 上，**requests + lxml + curl_cffi** 覆盖 95% 的场景。剩下的 5%（动态 JS 渲染、双重 CF 验证），等 Termux 的浏览器生态成熟了再说。
