@@ -59,6 +59,7 @@ tools/      — 独立模块（可单独复用）
 | `docs/06-crash-recovery.md` | 崩溃恢复与存储管理 | ✅ 可用 |
 | `tools/termux-keepalive.sh` | 一键保活（wake lock + 电池白名单） | ✅ 可用 |
 | `tools/termux-network-monitor.sh` | 网络断连自恢复监控 | ✅ 可用 |
+| `docs/07-web-scraping.md` | requests + lxml 抓取实战 | ✅ 可用 |
 
 ## 运行要求
 
