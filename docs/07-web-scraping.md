@@ -190,6 +190,21 @@ data = tree.cssselect('.target-class')[0].text_content()
 - 不要高频请求——CF 有行为分析，短时间大量请求仍然会触发验证
 - `impersonate` 参数不是万能药。极端场景（CF 5秒盾 + JS challenge）仍然过不了
 
+## 穿 Cloudflare：curl_cffi
+
+Termux 上装了 curl_cffi（有预编译的 Android aarch64 wheel），可以直接穿透 Cloudflare challenge：
+
+```python
+from curl_cffi import requests
+
+# impersonate 参数模拟浏览器指纹
+r = requests.get('https://nowsecure.nl', impersonate='chrome120', timeout=30)
+# nowsecure.nl 是 Cloudflare challenge 测试站，已验证通过
+print(r.status_code)  # 200
+```
+
+支持的 impersonate 选项：`chrome120`, `chrome110`, `safari15_5`, `safari17_0` 等。
+
 ## 进阶：关于 Scrapling
 
 [Scrapling](https://github.com/D4Vinci/Scrapling) 是一个更强大的 Python 抓取库，封装了 curl_cffi 并提供了智能元素匹配。在 Termux 上，Scrapling 的 Fetcher 因为 orjson 编译问题不可用，但 **Scrapling 底层的 curl_cffi 我们已经能在 Termux 上跑了**，Cloudflare 穿透能力是一样的。
