@@ -192,15 +192,28 @@ data = tree.cssselect('.target-class')[0].text_content()
 
 ## 穿 Cloudflare：curl_cffi
 
-Termux 上装了 curl_cffi（有预编译的 Android aarch64 wheel），可以直接穿透 Cloudflare challenge：
+### 安装
+
+```bash
+pip install curl_cffi
+```
+
+Termux 的 Python 3.13 有预编译的 Android aarch64 wheel（7.2MB），直接装就行。唯一需要编译的是 `cffi` 依赖，但也能在手机上编译通过（约 10-15 秒）。
+
+如遇 `ModuleNotFoundError: No module named 'lxml'`：
+
+```bash
+pkg install python-lxml    # 有预编译包，10秒装完
+```
+
+### 用法
 
 ```python
 from curl_cffi import requests
 
 # impersonate 参数模拟浏览器指纹
 r = requests.get('https://nowsecure.nl', impersonate='chrome120', timeout=30)
-# nowsecure.nl 是 Cloudflare challenge 测试站，已验证通过
-print(r.status_code)  # 200
+print(r.status_code)  # 200 (已验证)
 ```
 
 支持的 impersonate 选项：`chrome120`, `chrome110`, `safari15_5`, `safari17_0` 等。
