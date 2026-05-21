@@ -1,0 +1,289 @@
+#!/data/data/com.termux/files/usr/bin/bash
+#
+# termux-diag — Termux 环境诊断工具
+#
+# 一键检查：网络连通性、SSL证书、磁盘空间、内存、
+# Python/Node/Git 环境、PATH 完整性、存储权限
+#
+# 用法:
+#   termux-diag           # 完整诊断
+#   termux-diag --quick   # 快速检查（只报错不打印正常项）
+#   termux-diag --json    # JSON 格式输出（供 AI 解析）
+#
+# Hermes 每次醒来跑一下: termux-diag --quick
+
+set -euo pipefail
+
+# ── 颜色 ──
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+QUICK=false
+JSON=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --quick) QUICK=true ;;
+    --json)  JSON=true ;;
+  esac
+done
+
+# ── JSON 输出辅助 ──
+json_start()  { echo '{'; }
+json_end()    { echo '}'; }
+json_section() { echo "\"$1\": {" ; }
+json_close()   { echo '}'; }
+json_kv()     { echo "\"$1\": \"$2\","; }
+json_bool()   { echo "\"$1\": $2,"; }
+
+status_ok=0
+status_warn=0
+status_err=0
+sections=()
+
+add_section() {
+  local name="$1"
+  local status="$2"  # ok/warn/err
+  local detail="$3"
+  sections+=("{\"name\":\"$name\",\"status\":\"$status\",\"detail\":\"$detail\"}")
+  case "$status" in
+    ok)   ((status_ok++)) ;;
+    warn) ((status_warn++)) ;;
+    err)  ((status_err++)) ;;
+  esac
+}
+
+check_pass() { 
+  add_section "$1" "ok" "$2"
+  $JSON && return 0
+  $QUICK && return 0
+  echo -e "  ${GREEN}✓${NC} $1: $2"
+}
+check_warn() { 
+  add_section "$1" "warn" "$2"
+  $JSON && return 0
+  echo -e "  ${YELLOW}!${NC} $1: $2"
+}
+check_fail() { 
+  add_section "$1" "err" "$2"
+  $JSON && return 0
+  echo -e "  ${RED}✗${NC} $1: $2"
+}
+
+# ── 检测函数 ──
+
+check_termux() {
+  if [[ -d /data/data/com.termux && "$PREFIX" == *"com.termux"* ]]; then
+    local version
+    version=$(cat /data/data/com.termux/files/usr/etc/termux-version 2>/dev/null) || version="unknown"
+    check_pass "termux_env" "Termux detected ($version)"
+  else
+    check_warn "termux_env" "Not a standard Termux environment"
+  fi
+}
+
+check_storage() {
+  local total used avail pct
+  total=$(df -h /data/data/com.termux 2>/dev/null | awk 'NR==2{print $2}')
+  used=$(df -h /data/data/com.termux 2>/dev/null | awk 'NR==2{print $3}')
+  avail=$(df -h /data/data/com.termux 2>/dev/null | awk 'NR==2{print $4}')
+  pct=$(df /data/data/com.termux 2>/dev/null | awk 'NR==2{print $5}' | tr -d '%')
+  
+  if [[ -n "$pct" && "$pct" -gt 90 ]]; then
+    check_fail "disk_space" "Critical: ${pct}% used (${avail} free)"
+  elif [[ -n "$pct" && "$pct" -gt 75 ]]; then
+    check_warn "disk_space" "Warning: ${pct}% used (${avail} free)"
+  else
+    check_pass "disk_space" "OK: ${used}/${total} (${avail} free)"
+  fi
+}
+
+check_memory() {
+  local mem_total mem_avail
+  mem_total=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
+  mem_avail=$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')
+  
+  if [[ -z "$mem_total" ]]; then
+    check_warn "memory" "Cannot read memory info"
+  elif [[ "$mem_avail" -lt 256 ]]; then
+    check_fail "memory" "Critical: ${mem_avail}MB available (${mem_total}MB total)"
+  elif [[ "$mem_avail" -lt 512 ]]; then
+    check_warn "memory" "Low: ${mem_avail}MB available (${mem_total}MB total)"
+  else
+    check_pass "memory" "${mem_avail}MB available (${mem_total}MB total)"
+  fi
+}
+
+check_network() {
+  local targets=(
+    "github.com:443"
+    "pypi.org:443"
+    "google.com:443"
+  )
+  local fails=0
+  for target in "${targets[@]}"; do
+    if timeout 5 curl -sI "https://${target}" >/dev/null 2>&1; then
+      :
+    else
+      ((fails++))
+    fi
+  done
+  
+  if [[ "$fails" -eq 0 ]]; then
+    check_pass "network" "All 3 targets reachable"
+  elif [[ "$fails" -lt 3 ]]; then
+    check_warn "network" "${fails}/3 targets unreachable"
+  else
+    check_fail "network" "No external network — all 3 targets unreachable"
+  fi
+}
+
+check_ssl() {
+  if timeout 5 curl -sI "https://github.com" 2>&1 | grep -qi "SSL\|certificate\|TLS"; then
+    check_pass "ssl" "SSL/TLS working"
+  elif timeout 5 curl -sI "http://github.com" >/dev/null 2>&1; then
+    check_warn "ssl" "HTTP works but HTTPS may have SSL issues"
+  else
+    check_fail "ssl" "SSL check failed"
+  fi
+}
+
+check_python() {
+  if command -v python3 &>/dev/null; then
+    local ver
+    ver=$(python3 --version 2>&1)
+    check_pass "python" "$ver"
+  else
+    check_fail "python" "python3 not found"
+  fi
+}
+
+check_node() {
+  if command -v node &>/dev/null; then
+    local ver
+    ver=$(node --version 2>&1)
+    check_pass "node" "$ver"
+  else
+    check_warn "node" "Node.js not installed"
+  fi
+}
+
+check_git() {
+  if command -v git &>/dev/null; then
+    local ver email
+    ver=$(git --version 2>&1)
+    email=$(git config --global user.email 2>/dev/null || echo "not configured")
+    check_pass "git" "$ver (email: $email)"
+  else
+    check_fail "git" "git not found"
+  fi
+}
+
+check_github_auth() {
+  local token_file="$HOME/.hermes/token_github"
+  if [[ -f "$token_file" ]]; then
+    local token
+    token=$(head -c 10 "$token_file" 2>/dev/null)
+    check_pass "github_auth" "Token file exists (starts with: ${token}***)"
+  else
+    check_warn "github_auth" "No GitHub token found"
+  fi
+}
+
+check_cron_infra() {
+  if command -v crond &>/dev/null || command -v cron &>/dev/null || pgrep -x crond >/dev/null 2>&1; then
+    check_pass "cron" "Cron daemon running"
+  else
+    check_warn "cron" "Cron daemon not detected"
+  fi
+}
+
+check_wake_lock() {
+  if command -v termux-wake-lock &>/dev/null; then
+    check_pass "wake_lock" "termux-wake-lock available"
+  else
+    check_warn "wake_lock" "termux-wake-lock not available (install termux-api)"
+  fi
+}
+
+check_bash_version() {
+  local ver
+  ver=$(bash --version | head -1)
+  check_pass "bash" "$ver"
+}
+
+# ── 主流程 ──
+
+main() {
+  set +e  # 允许检查命令失败而不退出整个脚本
+  if $JSON; then
+    check_termux
+    check_storage
+    check_memory
+    check_network
+    check_ssl
+    check_python
+    check_node
+    check_git
+    check_github_auth
+    check_cron_infra
+    check_wake_lock
+    check_bash_version
+    
+    echo "["
+    local first=true
+    for s in "${sections[@]}"; do
+      $first || echo ","
+      echo -n "$s"
+      first=false
+    done
+    echo "]"
+    exit 0
+  fi
+  
+  echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
+  echo -e "${BOLD}║     Termux 环境诊断                 ║${NC}"
+  echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
+  echo ""
+  
+  if $QUICK; then
+    echo -e "${YELLOW}[!] 快速模式：只显示异常项${NC}"
+    echo ""
+  fi
+  
+  check_termux
+  check_storage
+  check_memory
+  check_network
+  check_ssl
+  check_python
+  check_node
+  check_git
+  check_github_auth
+  check_cron_infra
+  check_wake_lock
+  check_bash_version
+  
+  echo ""
+  echo -e "═══════════════════════════════════════"
+  
+  local total=$((status_ok + status_warn + status_err))
+  echo -e "${GREEN}✓ $status_ok${NC} / ${YELLOW}! $status_warn${NC} / ${RED}✗ $status_err${NC} — $total checks"
+  
+  if [[ $status_err -gt 0 ]]; then
+    echo -e "${RED}⚠ 需要处理的项目:${NC}"
+    exit 1
+  elif [[ $status_warn -gt 0 ]]; then
+    echo -e "${YELLOW}⚠ 有 ${status_warn} 个警告，建议关注${NC}"
+    exit 0
+  else
+    echo -e "${GREEN}✅ 一切正常${NC}"
+    exit 0
+  fi
+}
+
+main "$@"
