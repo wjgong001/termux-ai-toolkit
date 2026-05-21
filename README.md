@@ -47,6 +47,7 @@ tools/      — 独立模块（可单独复用）
 |------|------|------|
 | `bin/termux-ai-init` | 一键初始化 AI 环境 | ✅ 可用 |
 || `bin/termux-pip-safe` | 智能 pip：自动换源/降级/拆依赖 | ✅ 可用 |
+| `bin/termux-diag` | 环境诊断：网络/存储/内存/Python/Node/Git 一键检查 | ✅ 可用 |
 | `bin/termux-ai-update` | 更新所有 AI 工具 | 🚧 规划中 |
 | `scripts/setup-python-ai.sh` | Python AI 环境配置 | ✅ 可用 |
 | `scripts/config-git-ai.sh` | Git 配置（PAT、公钥） | 🚧 规划中 |
